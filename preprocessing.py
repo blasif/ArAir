@@ -1,7 +1,6 @@
 import pandas as pd
 import os
 import numpy as np
-from fuzzywuzzy import process as process_one
 import aux_functions
 
 def preprocess_first_step():
@@ -80,14 +79,6 @@ def preprocess_first_step():
 
     choices = aircrafts['MFR'] + " " + aircrafts['MODEL']
 
-    def standardize_aircraft(name):
-        # Fuzzy match if not found
-        best_match = process.extractOne(name, choices = choices)
-        if best_match and best_match[1] > 60:  # threshold for confidence
-            return aircrafts['MFR'].iloc[best_match[2]], aircrafts['MODEL'].iloc[best_match[2]], aircrafts['NO-SEATS'].iloc[best_match[2]]
-        return 'UNKNOWN','UNKNOWN',0
-
-    from rapidfuzz import process, fuzz
 
     manufacturer = []
     model = []
@@ -95,7 +86,7 @@ def preprocess_first_step():
 
     for aircraft in df['airplane'].unique():
         print(f"Processing {aircraft} identification")
-        code, country, alliance = standardize_aircraft(aircraft)
+        code, country, alliance = aux_functions.standardize_aircraft(name = aircraft, choices = choices, aircrafts = aircrafts)
         manufacturer.append(code)
         model.append(country)
         theoretical_seats.append(alliance)
@@ -113,23 +104,12 @@ def preprocess_first_step():
 
     airline_to_iata = dict(zip(airlines['Airline'], airlines['IATA']))    
 
-    def get_airline_code(airline_name):
-        """Fuzzy-match airline name to IATA code."""
-        match, score = process.extractOne(airline_name.upper(), airline_to_iata.keys())
-        print(f'{match}')
-        if score >= 60:
-            return match, airline_to_iata[match]
-        else: 
-            return None, None
-
-    from fuzzywuzzy import process
-
     vector_names = []
     vector_IATA = []
 
     for airline in df['airline'].unique():
         print(f"Processing {airline} identification")
-        tmp_name, tmp_IATA = get_airline_code(airline)
+        tmp_name, tmp_IATA = aux_functions.get_airline_code(airline,airline_to_iata)
         vector_names.append(tmp_name)
         vector_IATA.append(tmp_IATA)
 
@@ -181,48 +161,9 @@ def preprocess_first_step_b():
         df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
     
-    # Mapping dictionary for non-standard codes
-    code_mapping = {
-    'ARR': 'ARR',
-    'IGU': 'IGU',
-    'AER': 'AEP',  # Aeroparque
-    'BAR': 'BRC',  # Bariloche
-    'GRA': 'RGL',  # Rio Gallegos
-    'ECA': 'FTE',  # El Calafate (check this)
-    'NEU': 'NQN',  # Neuquén
-    'CBA': 'COR',  # Córdoba
-    'USU': 'USH',  # Ushuaia
-    'CRR': 'CRD',  # Comodoro Rivadavia
-    'POS': 'PSS',  # Posadas
-    'MDP': 'MDQ',  # Mar del Plata
-    'SAL': 'SLA',  # Salta
-    'DOZ': 'MDZ',  # Mendoza (possibly)
-    'CHP': 'CPC',  # San Martin de los Andes (Chapelco)
-    'JUA': 'JUJ',  # Jujuy (duplicate)
-    'BCA': 'BHI',  # Bahia Blanca (check)
-    'PAR': 'PRA',  # Paraná
-    'ESQ': 'EQS',  # Esquel
-    'TRE': 'REL',  # Trelew
-    'OSA': 'OES',  # San Antonio Oeste
-    'VIE': 'VDM',  # Viedma
-    'SVO': 'SVI',  # Not in Argentina (Russian airport)
-    'FSA': 'ROS',  # Rosario (Fisherton)
-    'SIS': 'SGV',  # Sierra Grande
-    'TRH': 'TDL',  # Tandil
-    'CRV': 'CRD',  # Comodoro Rivadavia (duplicate)
-    'DRY': 'RYO',  # Rio Turbio
-    'GAL': 'IGR',  # Iguazu (check) !!!!!!!!!!!!!!
-    'SDE': 'SDE',  # Correct (Santiago del Estero)
-    'LAR': 'IRJ',  # La Rioja
-    'SRA': 'RSA',  # Santa Rosa
-    'CAT': 'CTC',  # Catamarca
-    'UIS': 'UAQ',  # San Juan
-    'TRC': 'TUC'   # Tucumán (duplicate)
-    }
-
     # Apply the mapping
-    df['from'] = df['from'].map(code_mapping).fillna(df['from'])
-    df['to'] = df['to'].map(code_mapping).fillna(df['to'])
+    df['from'] = df['from'].map(aux_functions.code_mapping).fillna(df['from'])
+    df['to'] = df['to'].map(aux_functions.code_mapping).fillna(df['to'])
 
     df.loc[lambda row: row['from'] == 'IGU','from'] = 'IGR'
     df.loc[lambda row: row['to'] == 'IGU','to'] = 'IGR'
@@ -242,33 +183,12 @@ def preprocess_first_step_b():
     df.drop(labels = 'Coordinates',axis=1,inplace=True)
     df.drop(labels = 'Coordinates_to',axis=1,inplace=True)
 
-    def haversine(lat1, lon1, lat2, lon2):
-        """
-        Calculate the great circle distance between two points 
-        on the earth (specified in decimal degrees)
-        """
-        # Convert decimal degrees to radians 
-        lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
-    
-        # Haversine formula 
-        dlon = lon2 - lon1 
-        dlat = lat2 - lat1 
-        a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-        c = 2 * np.arcsin(np.sqrt(a)) 
-    
-        # Radius of earth in kilometers (use 3956 for miles)
-        r = 6371
-        return c * r
+    df['haversine'] = aux_functions.haversine(
+        df['Latitude'],df['Longitude'],
+        df['Latitude_to'],df['Longitude_to']
+        )
 
-    df['haversine'] = haversine(df['Latitude'],df['Longitude'],df['Latitude_to'],df['Longitude_to'])
-
-    def estimate_flight_time(distance_km):
-    
-        # Calculate time in hours then convert to minutes
-        flight_time_hours = distance_km / 850
-        return flight_time_hours * 60
-
-    df['flight_time'] = estimate_flight_time(df['haversine'])
+    df['flight_time'] = aux_functions.estimate_flight_time(df['haversine'])
 
     df = df.dropna()
 
@@ -308,32 +228,16 @@ def preprocess_second_step():
 
     subset_takeoff_reg_df = df.query("`mov` == 'Despegue'").copy()
     subset_landing = df.query(' mov == "Aterrizaje" ').copy()
-
-    def get_id(df,row):
-        
-        mask = (
-                (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('3h')) & 
-                (df['route'] == row['route']) &
-                (df['index'] > row['index']) 
-            )
-    
-        matches = df.loc[mask, 'index']
-        
-        if len(matches) > 0:
-            return matches.iloc[0]
-        else:
-            return None
         
     subset_takeoff_reg_df['ids'] = subset_takeoff_reg_df.apply(
-        lambda row: get_id(subset_landing, row), axis=1
+        lambda row: aux_functions.get_id(subset_landing, row), axis=1
         )
     
     ids_list = subset_takeoff_reg_df['ids'].tolist()
     
     subset_takeoff_reg_df.to_csv(combined_csv_path_ss)
     
-    
-    
+
 def preprocess_third_step():
     
     combined_csv_path_ss = 'data/flightdata_combined_third.csv'
@@ -358,33 +262,7 @@ def preprocess_third_step():
 
     joint_lt_subset = joint_lt[['from','to','mov','pas_num','pas_num_landing','PAX','PAX_landing','BRAND','MODEL','THEO_SEATS','IATA','AIR_STD','EMP_SEATS','OCU_THEO','OCU_EMP','OCU_THEO_landing','OCU_EMP_landing','combined_hour','combined_hour_landing','haversine','flight_time','route','Latitude','Longitude','Latitude_landing','Longitude_landing']]
     
-    def replace_minor_models(group):
-        # Count each model
-        counts = group['MODEL'].value_counts(normalize=True)
-        # Find the most common model and its proportion
-        top_model = counts.idxmax()
-
-        top_brand_idx = group['BRAND'].value_counts(normalize=True)
-        top_brand = top_brand_idx.idxmax()
-
-        theo_seats_idx = group['THEO_SEATS'].value_counts(normalize=True)
-        top_seats = theo_seats_idx.idxmax()
-    
-        top_OCU_idx = group['OCU_THEO_landing'].value_counts(normalize=True)
-        top_OCU = top_OCU_idx.idxmax()
-
-        top_prop = counts.max()
-        
-        # If the top model is used >90% of the time, replace others
-        if top_prop > 0.9:
-            group['MODEL'] = top_model
-            group['BRAND'] = top_brand
-            group['THEO_SEATS'] = top_seats
-            group['OCU_THEO_landing'] = top_OCU
-
-        return group
-
-    joint_lt_subset = joint_lt_subset.groupby(['route','IATA'], group_keys=False).apply(replace_minor_models)
+    joint_lt_subset = joint_lt_subset.groupby(['route','IATA'], group_keys=False).apply(aux_functions.replace_minor_models)
     
     joint_lt_subset['time_taken'] = (joint_lt_subset['combined_hour_landing'] - joint_lt_subset['combined_hour']).dt.total_seconds() / 60
 

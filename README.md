@@ -1,2 +1,2 @@
 # ArAir
-Exploring regular local air traffic from Argentina.
+Exploring Argentina's domestic commercial air traffic
