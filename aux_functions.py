@@ -6,66 +6,6 @@ import os
 import pandas as pd
 from fuzzywuzzy import process
 
-def extract_brand(name):
-    """Extract the brand of the airplane (text before the first dash)."""
-    if pd.isna(name) or name == "0":  # Handle missing or invalid values
-        return None
-    return name.split('-')[0]  # Split by dash and return the first part
-
-def extract_airplane_type(name):
-    """Extract the brand of the airplane (text before the first dash)."""
-    if pd.isna(name) or name == "0":  # Handle missing or invalid values
-        return None
-    return name.split('-')[1]  # Split by dash and return the first part
-
-def extract_airplane_config(name):
-    """Extract the brand of the airplane (text before the first dash)."""
-    if pd.isna(name) or name == "0":  # Handle missing or invalid values
-        return None
-    
-    to_return = name.split('-')
-    if(len(to_return) < 3):
-        return None
-    
-    return to_return[2]  # Split by dash and return the first part
-
-def get_id(df,row):
-    # First check if all required columns exist
-    required_columns = ['IATA','from', 'to', 'mov', 'pas_num', 'airplane']
-    missing_cols = [col for col in required_columns if col not in df.columns]
-    
-    if missing_cols:
-        raise KeyError(f"DataFrame missing required columns: {missing_cols}")
-    
-    try:
-        mask = (
-            (abs(df['combined_hour'] - row['combined_hour']) < pd.Timedelta('10h')) & 
-            (df['IATA'] == row['IATA']) &
-            (df['from'] == row['to']) & 
-            (df['to'] == row['from']) &
-            (df['mov'] == 'Aterrizaje') &
-            (abs(df['pas_num'] - row['pas_num']) <= 5) &
-            (abs(df['PAX'] - row['PAX']) <= 5) &
-            (df['index'] > row['index']) 
-        )
-        
-        matches = df.loc[mask, 'index']
-        
-        if len(matches) == 1:
-            return matches.iloc[0] if not matches.empty else None
-        if len(matches) > 1:
-            return matches.iloc[0]
-        return None  # or handle multiple/no matches as needed
-        
-    except KeyError as e:
-        print(f"Missing key in row data: {e}")
-        return None
-
-def get_airline_code(airline_name, airline_to_iata):
-    """Fuzzy-match airline name to IATA code."""
-    match, score = process.extractOne(airline_name.upper(), airline_to_iata.keys())
-    return airline_to_iata[match] if score >= 80 else None
-
 # Mapping dictionary for non-standard codes
 code_mapping = {
     'ARR': 'ARR',
@@ -105,6 +45,29 @@ code_mapping = {
     'TRC': 'TUC'   # Tucumán (duplicate)
 }
 
+def extract_brand(name):
+    """Extract the brand of the airplane (text before the first dash)."""
+    if pd.isna(name) or name == "0":  
+        return None
+    return name.split('-')[0]  
+
+def extract_airplane_type(name):
+    """Extract the brand of the airplane (text before the first dash)."""
+    if pd.isna(name) or name == "0":  
+        return None
+    return name.split('-')[1]  
+
+def extract_airplane_config(name):
+    """Extract the brand of the airplane (text before the first dash)."""
+    if pd.isna(name) or name == "0":  
+        return None
+    
+    to_return = name.split('-')
+    if(len(to_return) < 3):
+        return None
+    
+    return to_return[2] 
+
 def haversine(lat1, lon1, lat2, lon2):
     import numpy as np
     """
@@ -129,22 +92,6 @@ def estimate_flight_time(distance_km):
     # Calculate time in hours then convert to minutes
     flight_time_hours = distance_km / 850
     return flight_time_hours * 60
-
-
-def get_id(df,row):
-        
-    mask = (
-            (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('3h')) & 
-            (df['route'] == row['route']) &
-            (df['index'] > row['index']) 
-        )
-    
-    matches = df.loc[mask, 'index']
-        
-    if len(matches) > 0:
-        return matches.iloc[0]
-    else:
-        return None
     
 def replace_minor_models(group):
     # Count each model
@@ -177,6 +124,7 @@ def time_of_day_seconds(dt):
     return dt.hour * 3600 + dt.minute * 60 + dt.second
 
 def circular_mean(times_in_seconds):
+    import numpy as np
     """Compute the circular mean of times given in seconds."""
     radians = times_in_seconds * 2 * np.pi / 86400  # 86400 seconds in a day
     mean_angle = np.arctan2(np.mean(np.sin(radians)), np.mean(np.cos(radians)))
@@ -215,51 +163,10 @@ def get_airline_code(airline_name, airline_to_iata):
     else: 
         return None, None
     
-
-# Mapping dictionary for non-standard codes
-code_mapping = {
-    'ARR': 'ARR',
-    'IGU': 'IGU',
-    'AER': 'AEP',  # Aeroparque
-    'BAR': 'BRC',  # Bariloche
-    'GRA': 'RGL',  # Rio Gallegos
-    'ECA': 'FTE',  # El Calafate (check this)
-    'NEU': 'NQN',  # Neuquén
-    'CBA': 'COR',  # Córdoba
-    'USU': 'USH',  # Ushuaia
-    'CRR': 'CRD',  # Comodoro Rivadavia
-    'POS': 'PSS',  # Posadas
-    'MDP': 'MDQ',  # Mar del Plata
-    'SAL': 'SLA',  # Salta
-    'DOZ': 'MDZ',  # Mendoza (possibly)
-    'CHP': 'CPC',  # San Martin de los Andes (Chapelco)
-    'JUA': 'JUJ',  # Jujuy (duplicate)
-    'BCA': 'BHI',  # Bahia Blanca (check)
-    'PAR': 'PRA',  # Paraná
-    'ESQ': 'EQS',  # Esquel
-    'TRE': 'REL',  # Trelew
-    'OSA': 'OES',  # San Antonio Oeste
-    'VIE': 'VDM',  # Viedma
-    'SVO': 'SVI',  # Not in Argentina (Russian airport)
-    'FSA': 'ROS',  # Rosario (Fisherton)
-    'SIS': 'SGV',  # Sierra Grande
-    'TRH': 'TDL',  # Tandil
-    'CRV': 'CRD',  # Comodoro Rivadavia (duplicate)
-    'DRY': 'RYO',  # Rio Turbio
-    'GAL': 'IGR',  # Iguazu (check) !!!!!!!!!!!!!!
-    'SDE': 'SDE',  # Correct (Santiago del Estero)
-    'LAR': 'IRJ',  # La Rioja
-    'SRA': 'RSA',  # Santa Rosa
-    'CAT': 'CTC',  # Catamarca
-    'UIS': 'UAQ',  # San Juan
-    'TRC': 'TUC'   # Tucumán (duplicate)
-}
-
-
 def get_id(df,row):
         
     mask = (
-            (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('3h')) & 
+            (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('4h')) & 
             (df['route'] == row['route']) &
             (df['index'] > row['index']) 
         )
