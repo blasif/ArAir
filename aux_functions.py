@@ -1,64 +1,20 @@
-import requests
-from bs4 import BeautifulSoup
-import re
-import csv
-import os
 import pandas as pd
-from fuzzywuzzy import process
-
-# Mapping dictionary for non-standard codes
-code_mapping = {
-    'ARR': 'ARR',
-    'IGU': 'IGU',
-    'AER': 'AEP',  # Aeroparque
-    'BAR': 'BRC',  # Bariloche
-    'GRA': 'RGL',  # Rio Gallegos
-    'ECA': 'FTE',  # El Calafate (check this)
-    'NEU': 'NQN',  # Neuquén
-    'CBA': 'COR',  # Córdoba
-    'USU': 'USH',  # Ushuaia
-    'CRR': 'CRD',  # Comodoro Rivadavia
-    'POS': 'PSS',  # Posadas
-    'MDP': 'MDQ',  # Mar del Plata
-    'SAL': 'SLA',  # Salta
-    'DOZ': 'MDZ',  # Mendoza (possibly)
-    'CHP': 'CPC',  # San Martin de los Andes (Chapelco)
-    'JUA': 'JUJ',  # Jujuy (duplicate)
-    'BCA': 'BHI',  # Bahia Blanca (check)
-    'PAR': 'PRA',  # Paraná
-    'ESQ': 'EQS',  # Esquel
-    'TRE': 'REL',  # Trelew
-    'OSA': 'OES',  # San Antonio Oeste
-    'VIE': 'VDM',  # Viedma
-    'SVO': 'SVI',  # Not in Argentina (Russian airport)
-    'FSA': 'ROS',  # Rosario (Fisherton)
-    'SIS': 'SGV',  # Sierra Grande
-    'TRH': 'TDL',  # Tandil
-    'CRV': 'CRD',  # Comodoro Rivadavia (duplicate)
-    'DRY': 'RYO',  # Rio Turbio
-    'GAL': 'IGR',  # Iguazu (check) !!!!!!!!!!!!!!
-    'SDE': 'SDE',  # Correct (Santiago del Estero)
-    'LAR': 'IRJ',  # La Rioja
-    'SRA': 'RSA',  # Santa Rosa
-    'CAT': 'CTC',  # Catamarca
-    'UIS': 'UAQ',  # San Juan
-    'TRC': 'TUC'   # Tucumán (duplicate)
-}
+from fuzzywuzzy import process as process_one
+from rapidfuzz import process as process_two
+import numpy as np
+import unicodedata
 
 def extract_brand(name):
-    """Extract the brand of the airplane (text before the first dash)."""
     if pd.isna(name) or name == "0":  
         return None
     return name.split('-')[0]  
 
 def extract_airplane_type(name):
-    """Extract the brand of the airplane (text before the first dash)."""
     if pd.isna(name) or name == "0":  
         return None
     return name.split('-')[1]  
 
 def extract_airplane_config(name):
-    """Extract the brand of the airplane (text before the first dash)."""
     if pd.isna(name) or name == "0":  
         return None
     
@@ -69,7 +25,6 @@ def extract_airplane_config(name):
     return to_return[2] 
 
 def haversine(lat1, lon1, lat2, lon2):
-    import numpy as np
     """
     Calculate the great circle distance between two points 
     on the earth (specified in decimal degrees)
@@ -93,38 +48,11 @@ def estimate_flight_time(distance_km):
     flight_time_hours = distance_km / 850
     return flight_time_hours * 60
     
-def replace_minor_models(group):
-    # Count each model
-    counts = group['MODEL'].value_counts(normalize=True)
-    # Find the most common model and its proportion
-    top_model = counts.idxmax()
-
-    top_brand_idx = group['BRAND'].value_counts(normalize=True)
-    top_brand = top_brand_idx.idxmax()
-
-    theo_seats_idx = group['THEO_SEATS'].value_counts(normalize=True)
-    top_seats = theo_seats_idx.idxmax()
-    
-    top_OCU_idx = group['OCU_THEO_landing'].value_counts(normalize=True)
-    top_OCU = top_OCU_idx.idxmax()
-
-    top_prop = counts.max()
-    # If the top model is used >90% of the time, replace others
-    if top_prop > 0.9:
-        group['MODEL'] = top_model
-        group['BRAND'] = top_brand
-        group['THEO_SEATS'] = top_seats
-        group['OCU_THEO_landing'] = top_OCU
-
-    return group
-
-
 def time_of_day_seconds(dt):
     """Convert datetime to seconds since midnight."""
     return dt.hour * 3600 + dt.minute * 60 + dt.second
 
 def circular_mean(times_in_seconds):
-    import numpy as np
     """Compute the circular mean of times given in seconds."""
     radians = times_in_seconds * 2 * np.pi / 86400  # 86400 seconds in a day
     mean_angle = np.arctan2(np.mean(np.sin(radians)), np.mean(np.cos(radians)))
@@ -145,32 +73,25 @@ def centroid_departure_time(group):
     return pd.Timestamp(f"{hours:02d}:{minutes:02d}:{seconds:02d}").time()
 
 def standardize_aircraft(name, choices, aircrafts):
-    from rapidfuzz import process, fuzz
-    # Fuzzy match if not found
-    best_match = process.extractOne(name, choices = choices)
-    if best_match and best_match[1] > 60:  # threshold for confidence
-        return aircrafts['MFR'].iloc[best_match[2]], aircrafts['MODEL'].iloc[best_match[2]], aircrafts['NO-SEATS'].iloc[best_match[2]]
-    return 'UNKNOWN','UNKNOWN',0
-
-
-def get_airline_code(airline_name, airline_to_iata):
-    from fuzzywuzzy import process
-    """Fuzzy-match airline name to IATA code."""
-    match, score = process.extractOne(airline_name.upper(), airline_to_iata.keys())
-    print(f'{match}')
-    if score >= 60:
-        return match, airline_to_iata[match]
-    else: 
-        return None, None
+    
+    if name == "0":
+        return 'UNKNOWN','UNKNOWN'
+        
+    best_match = process_two.extractOne(name, choices = choices)
+    
+    if best_match and best_match[1] > 60:  
+        return aircrafts['MFR'].iloc[best_match[2]], aircrafts['MODEL'].iloc[best_match[2]]
+    else:
+        return 'UNKNOWN','UNKNOWN'
     
 def get_id(df,row):
         
     mask = (
-            (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('4h')) & 
+            (abs(df['combined_hour'] - ( row['combined_hour'] + pd.Timedelta(row['flight_time'],unit = 'm'))) < pd.Timedelta('2h')) & 
             (df['route'] == row['route']) &
             (df['index'] > row['index']) 
         )
-    
+        
     matches = df.loc[mask, 'index']
         
     if len(matches) > 0:
@@ -204,3 +125,9 @@ def replace_minor_models(group):
         group['OCU_THEO_landing'] = top_OCU
 
     return group
+
+def remove_accents(text):
+    # Normalize the string to NFKD Unicode form
+    text_nfkd = unicodedata.normalize('NFKD', str(text))
+    # Filter out diacritical marks (accents)
+    return ''.join(c for c in text_nfkd if not unicodedata.combining(c))

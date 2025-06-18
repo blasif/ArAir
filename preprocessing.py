@@ -5,10 +5,10 @@ import aux_functions
 
 def preprocess_first_step():
 
-    combined_csv_path = 'data/flightdata_combined.csv'
+    flight_data = 'data/flightdata_step_a.csv'
 
-    if os.path.exists(combined_csv_path):
-        print(f"{combined_csv_path} already exists. Skipping preprocessing.")
+    if os.path.exists(flight_data):
+        print(f"{flight_data} already exists. Skipping preprocessing.")
         return 0
 
     csv_files = [f for f in os.listdir('data/flightdata_raw/') if f.endswith('.csv')]
@@ -19,8 +19,7 @@ def preprocess_first_step():
     
         if iters > 0:
             temp_df.columns  = df.columns
-
-        if iters == 0:
+        else:
             df = temp_df
             continue
 
@@ -29,167 +28,188 @@ def preprocess_first_step():
     # ----------–-------------------
     # Step 1 : Preprocess
     # ------------------------------
-
-    # Simple filtering and preprocessing of data
+    
+    df['Tipo de Movimiento'] = df['Tipo de Movimiento'].replace({'Aterrizaje' : 'landing', 'Despegue' : 'takeoff'})
     
     df.rename(columns = {'Clase de Vuelo (todos los vuelos)' : 'flight',
-                     'Fecha UTC' : 'date',
-                     'Hora UTC' : 'utc',
-                     'Clasificación Vuelo' : 'type',
-                     'Tipo de Movimiento' : 'mov',
-                     'Aeropuerto' : 'from',
-                     'Pasajeros' : 'pas_num',
-                     'Origen / Destino' : 'to',
-                     'Aerolinea Nombre' : 'airline',
-                     'Aeronave' : 'airplane',
-                     'Calidad dato' : 'info' }, inplace = True)
-
+                    'Fecha UTC' : 'date',
+                    'Hora UTC' : 'utc',
+                    'Clasificación Vuelo' : 'type',
+                    'Tipo de Movimiento' : 'mov',
+                    'Aeropuerto' : 'from',
+                    'Pasajeros' : 'pas_num',
+                    'Origen / Destino' : 'to',
+                    'Aerolinea Nombre' : 'airline',
+                    'Aeronave' : 'airplane',
+                    'Calidad dato' : 'info' }, inplace = True)
+    
     df.query(' flight == "Regular" & type == "Doméstico" ',inplace = True)
+    df.drop(['flight','type','info'], axis=1,  inplace = True)
+    
+    Index_Airlines = df['airline'].value_counts().sort_values(ascending=False)[0:6].index
 
-    df = df[['date','utc','mov','from','to','airline','airplane','pas_num','PAX','info']]
-
-    df.drop('info', axis = 1, inplace = True)
-
-    counts = df['airline'].value_counts()
-    Index_Airlines = counts[counts > 100].index
-
-    df = df[df['airline'].isin(Index_Airlines)]
+    df = df[df['airline'].isin(Index_Airlines)].copy()
 
     df['PAX'] = pd.to_numeric(df['PAX'].astype(str).str.replace(',', '.', regex=False))
-
-    Index_airlines = df.groupby('airline')['PAX'].sum().loc[lambda x: x > 6000].index
-
-    df = df[df['airline'].isin(Index_airlines)]
-    df = df[df['airline'] != '0']
-    df = df[df['airline'] != 'LADE']
-
+    
+    df['date'] = pd.to_datetime(df['date'],dayfirst=True)
+    df['utc'] = pd.to_datetime(df['utc'], format='%H:%M')
+    df['from'] = df['from'].astype("string")
+    df['to'] = df['to'].astype("string")
+    df['airline'] = df['airline'].astype("string")
+    df['airplane'] = df['airplane'].astype("string")
+    df['PAX'] = df['PAX'].astype("int")
+    df['combined_hour'] = df['date'] + (df['utc'] - df['utc'].dt.normalize())
+    df.drop(['date','utc'],axis= 1 , inplace=True)
+    
     # ----------–-------------------
     # Step 2 : Update Airplane names
     # ------------------------------
-     
-    airlines = pd.read_csv("airline_codes.csv")
-    
+        
+    # airlines = pd.read_csv("airline_codes.csv")
+
     aircrafts = pd.read_csv('ACFTREF.txt', delimiter=',', header=0, dtype=str)
 
     aircrafts['MFR'] =  aircrafts['MFR'].astype(str).str.strip()
     aircrafts['MODEL'] =  aircrafts['MODEL'].astype(str).str.strip()
-    aircrafts['NO-SEATS'] = aircrafts['NO-SEATS'].astype(int)
-    aircrafts['NO-ENG'] = aircrafts['NO-ENG'].astype(int)
-    aircrafts['SPEED'] = aircrafts['SPEED'].astype(int) * 1.60934 # Miles to km
 
     choices = aircrafts['MFR'] + " " + aircrafts['MODEL']
 
-
     manufacturer = []
     model = []
-    theoretical_seats = []
 
     for aircraft in df['airplane'].unique():
         print(f"Processing {aircraft} identification")
-        code, country, alliance = aux_functions.standardize_aircraft(name = aircraft, choices = choices, aircrafts = aircrafts)
-        manufacturer.append(code)
-        model.append(country)
-        theoretical_seats.append(alliance)
+        manuf, mod = aux_functions.standardize_aircraft(name = aircraft, choices = choices, aircrafts = aircrafts)
+        manufacturer.append(manuf)
+        model.append(mod)
 
     iata_to_aircraft = dict(zip(df['airplane'].unique(),manufacturer))
     df.loc[:,'BRAND'] = df['airplane'].map(iata_to_aircraft)
     iata_to_aircraft = dict(zip(df['airplane'].unique(),model))
     df.loc[:,'MODEL'] = df['airplane'].map(iata_to_aircraft)
-    iata_to_aircraft = dict(zip(df['airplane'].unique(),theoretical_seats))
-    df.loc[:,'THEO_SEATS'] = df['airplane'].map(iata_to_aircraft)
+    
+    # Impute missing airplane names
+    
+    df.reset_index(inplace=True)
+    index_missing = df.query(' airplane == "0" ').index
+    
+    # 1. Get all relevant groups for the missing rows
+    missing_info = df.loc[index_missing, ['from', 'to', 'airline']].drop_duplicates()
+
+    # 2. For each group of ('from', 'to', 'airline'), process once
+    for _, row in missing_info.iterrows():
+        from_val, to_val, airline_val = row['from'], row['to'], row['airline']
+
+        # Subset for this route+airline group
+        subset = df[
+            (df['from'] == from_val) &
+            (df['to'] == to_val) &
+            (df['airline'] == airline_val)
+        ]
+
+        if subset.empty:
+            continue
+
+        # Brand dominance condition
+        MNF_sizes = subset.groupby('BRAND').size()
+        dominant_ratio = (MNF_sizes / subset.shape[0]).max() * 100
+
+        if dominant_ratio > 90:
+            brand_to_impute = MNF_sizes.idxmax()
+            model_to_impute = (
+                subset[subset['BRAND'] == brand_to_impute]
+                .groupby('MODEL')
+                .size()
+                .idxmax()
+            )
+
+            # Apply the imputation to all matching missing rows
+            mask = (
+                (df['from'] == from_val) &
+                (df['to'] == to_val) &
+                (df['airline'] == airline_val) &
+                (df.index.isin(index_missing))
+            )
+            df.loc[mask, ['BRAND', 'MODEL']] = brand_to_impute, model_to_impute
+            
+    df['airplane_std'] = df['BRAND'] + " " + df['MODEL']
 
     # ---------------------------------------------
     # Step 3 : Retrieve IATA callsigns for Airlines
     # ---------------------------------------------
 
-    airline_to_iata = dict(zip(airlines['Airline'], airlines['IATA']))    
+    unique_airline_names = df['airline'].unique()
 
-    vector_names = []
-    vector_IATA = []
+    map_airlines_names = dict({'A-Jet Aviation Aircraft Management': 'A-Jet AAM',
+                            'Andes Líneas Aéreas' : 'Andes LA',
+                            'AEROLINEAS ARGENTINAS SA' : 'Aerolineas Argentinas',
+                            'AUSTRAL LINEAS AEREAS-CIELOS DEL SUR S.A' : 'Austral LA',
+                            'FB LÍNEAS AÉREAS - FLYBONDI' : 'Flybondi',
+                            'LADE' : 'LADE',
+                            'JETSMART AIRLINES S.A.' : 'Jetsmart',
+                            'LAN ARGENTINA S.A. (LATAM AIRLINES)' : 'LAN Argentina'})
 
-    for airline in df['airline'].unique():
-        print(f"Processing {airline} identification")
-        tmp_name, tmp_IATA = aux_functions.get_airline_code(airline,airline_to_iata)
-        vector_names.append(tmp_name)
-        vector_IATA.append(tmp_IATA)
+    map_iata_names = dict({'A-Jet Aviation Aircraft Management': 'JAS',
+                            'Andes Líneas Aéreas' : 'O4',
+                            'AEROLINEAS ARGENTINAS SA' : 'AR',
+                            'AUSTRAL LINEAS AEREAS-CIELOS DEL SUR S.A' : 'AU',
+                            'FB LÍNEAS AÉREAS - FLYBONDI' : 'FO',
+                            'LADE' : 'LADE',
+                            'JETSMART AIRLINES S.A.' : 'JA',
+                            'LAN ARGENTINA S.A. (LATAM AIRLINES)' : 'LA'})
 
-    vector_IATA[4] = 'ALA'
-    vector_IATA[6] = 'Aerea'
-    # vector_names[4] = "Andes LA"
+    std_names = [airline + " " + "(" + iata + ")" for airline, iata in zip(map_airlines_names.values(), map_iata_names.values())]
 
-    result = [f"{name} ({iata})" for name, iata in zip(vector_names, vector_IATA)]
+    result = dict(zip(list(unique_airline_names),std_names))
 
-    iata_to_airline = dict(zip(df['airline'].unique(),vector_IATA))
-    df['IATA'] = df['airline'].map(iata_to_airline)
+    df['IATA'] = df['airline'].map(map_iata_names)
+    df['Airline_polished'] = df['airline'].map(map_airlines_names)
 
-    iata_to_airline = dict(zip(df['airline'].unique(),result))
-    df['AIR_STD'] = df['airline'].map(iata_to_airline)
-
-    df.loc[:,'date'] = pd.to_datetime(df.date,dayfirst=True)
+    df['AIRLINE_STD'] = df['airline'].map(result)
 
     df['EMP_SEATS'] = df.groupby(['IATA','BRAND','MODEL'])['PAX'].transform(lambda x : int(x.quantile(0.99)))
 
-    df = df.reset_index(drop=True)
-
     df.loc[df['PAX'] > df['EMP_SEATS'] ,'PAX'] = df['EMP_SEATS']
-    df['OCU_THEO'] = df['PAX'] / df['THEO_SEATS']
-    df['OCU_EMP'] = df['PAX'] / df['EMP_SEATS']
     
-    # ---------------------------------------------
-    # Step 4 : new stuff
-    # ---------------------------------------------
+    # df.drop('airline', axis = 1,inplace=True)
     
-    times = pd.to_datetime(df['utc'], format='%H:%M').dt.time
-
-    dates_dt = pd.to_datetime(df['date'])
-    times_dt = pd.to_datetime(df['utc'], format='%H:%M')
-    df['combined_hour'] = dates_dt + (times_dt - times_dt.dt.normalize())
-    df = df.drop(labels = ['date','utc'], axis = 1)
-    
-    df.to_csv(combined_csv_path)
+    df.to_csv(flight_data)
     
 
 def preprocess_first_step_b():
     
-    combined_csv_path_ss = 'data/flightdata_combined_b.csv'
-    combined_csv_path_fs = 'data/flightdata_combined.csv'
+    combined_csv_path_ss = 'data/flightdata_step_b.csv'
+    combined_csv_path_fs = 'data/flightdata_step_a.csv'
 
     if os.path.exists(combined_csv_path_ss):
         print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
         return 0
     else :
-        df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
+        df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0).drop('index', axis=1)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
+        
+    Airports_info = pd.read_csv("aeropuertos_detalle.csv", delimiter = ';')
+        
+    Airports_info['denominacion'] = [aux_functions.remove_accents(denominacion) for denominacion in Airports_info['denominacion']]
+
+    Airports_info['ref'] = [aux_functions.remove_accents(ref) for ref in Airports_info['ref']]
+
+    Airports_info['provincia'] = [aux_functions.remove_accents(provincia) for provincia in Airports_info['provincia']]
+
+    Airports_info = Airports_info[['local','latitud','longitud','ref','distancia_ref','fir','provincia']].copy().rename(columns = {'latitud' : 'Latitude', 'longitud' : 'Longitude','ref' : 'City', 'distancia_ref' : 'dist_to_city', 'provincia' : 'province'})
     
-    # Apply the mapping
-    df['from'] = df['from'].map(aux_functions.code_mapping).fillna(df['from'])
-    df['to'] = df['to'].map(aux_functions.code_mapping).fillna(df['to'])
+    df = df.set_index('from').join(how = 'left',  other= Airports_info.set_index('local')).reset_index().set_index('to').join(how = 'left',  other= Airports_info.set_index('local'),rsuffix = '_to' ).reset_index()
 
-    df.loc[lambda row: row['from'] == 'IGU','from'] = 'IGR'
-    df.loc[lambda row: row['to'] == 'IGU','to'] = 'IGR'
-
-    df.loc[lambda row: row['from'] == 'RTA','from'] = 'RCQ'
-    df.loc[lambda row: row['to'] == 'RTA','to'] = 'RCQ'
-
-    df.loc[lambda row: row['from'] == 'MDB','from'] = 'MDQ'
-    df.loc[lambda row: row['to'] == 'MDB','to'] = 'MDQ'
-
-    Airports_info = pd.read_csv("Airports_info.csv", index_col = 0)
-
-    # df.drop(labels = 'index', axis = 1, inplace = True)
-
-    df = df.set_index('from').join(how = 'left',  other= Airports_info.set_index('IATA'),rsuffix = '_test').reset_index().set_index('to').join(how = 'left',  other= Airports_info.set_index('IATA'),rsuffix = '_to' ).reset_index()
-
-    df.drop(labels = 'Coordinates',axis=1,inplace=True)
-    df.drop(labels = 'Coordinates_to',axis=1,inplace=True)
-
+    df.dropna(inplace = True)
+    
     df['haversine'] = aux_functions.haversine(
         df['Latitude'],df['Longitude'],
         df['Latitude_to'],df['Longitude_to']
         )
 
     df['flight_time'] = aux_functions.estimate_flight_time(df['haversine'])
-
+    
     df = df.dropna()
 
     df['route'] = np.where(
@@ -207,17 +227,16 @@ def preprocess_first_step_b():
             df['from'] + ' - ' + df['to']   # Keep original order if 'from' < 'to'
         )
     )
-    
+
     df.reset_index(inplace=True)    
-    
+
     df.to_csv(combined_csv_path_ss)
     
-
-def preprocess_second_step():
-        
-    combined_csv_path_ss = 'data/flightdata_combined_second.csv'
     
-    combined_csv_path_fs = 'data/flightdata_combined_b.csv'
+def preprocess_second_step(args):
+        
+    combined_csv_path_ss = 'data/flightdata_step_c.csv'
+    combined_csv_path_fs = 'data/flightdata_step_b.csv'
 
     if os.path.exists(combined_csv_path_ss):
         print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
@@ -226,23 +245,22 @@ def preprocess_second_step():
         df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
 
-    subset_takeoff_reg_df = df.query("`mov` == 'Despegue'").copy()
-    subset_landing = df.query(' mov == "Aterrizaje" ').copy()
+    subset_takeoff_reg_df = df.query("`mov` == 'takeoff'").copy()
+    subset_landing = df.query(' mov == "landing" ').copy()
         
     subset_takeoff_reg_df['ids'] = subset_takeoff_reg_df.apply(
         lambda row: aux_functions.get_id(subset_landing, row), axis=1
         )
-    
-    ids_list = subset_takeoff_reg_df['ids'].tolist()
-    
+        
     subset_takeoff_reg_df.to_csv(combined_csv_path_ss)
     
-
 def preprocess_third_step():
     
-    combined_csv_path_ss = 'data/flightdata_combined_third.csv'
+    # drop _to_landing
     
-    combined_csv_path_fs = 'data/flightdata_combined_second.csv'
+    combined_csv_path_ss = 'data/flightdata_step_d.csv'
+    
+    combined_csv_path_fs = 'data/flightdata_step_c.csv'
 
     if os.path.exists(combined_csv_path_ss):
         print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
@@ -250,32 +268,22 @@ def preprocess_third_step():
     else :
         df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'], yearfirst = True)
-        df_old = pd.read_csv('data/flightdata_combined_b.csv',low_memory = False,index_col= 0)
+        df_old = pd.read_csv('data/flightdata_step_b.csv',low_memory = False,index_col= 0)
         df_old['combined_hour'] = pd.to_datetime(df_old['combined_hour'], yearfirst = True)
-        subset_landing = df_old.query("`mov` == 'Aterrizaje'").copy()
+        subset_landing = df_old.query(" `mov` == 'landing'").copy()
     
-    df.dropna(subset = 'ids',inplace=True)
+    df.dropna(subset = 'ids', inplace = True)
     df.ids = df.ids.astype(int)
 
     joint_lt = df.set_index('ids').join(how = 'left', other = subset_landing
     .set_index('index'), rsuffix = '_landing')
 
-    joint_lt_subset = joint_lt[['from','to','mov','pas_num','pas_num_landing','PAX','PAX_landing','BRAND','MODEL','THEO_SEATS','IATA','AIR_STD','EMP_SEATS','OCU_THEO','OCU_EMP','OCU_THEO_landing','OCU_EMP_landing','combined_hour','combined_hour_landing','haversine','flight_time','route','Latitude','Longitude','Latitude_landing','Longitude_landing']]
+    joint_lt_subset = joint_lt.drop(['index','mov','airline','airplane','to_landing','from_landing','mov_landing','airline_landing','airplane_landing','BRAND_landing','MODEL_landing','airplane_std_landing','IATA_landing','Airline_polished_landing','AIRLINE_STD_landing','EMP_SEATS_landing','Latitude_to_landing','Longitude_to_landing','City_to_landing','dist_to_city_to_landing','fir_to_landing','province_to_landing','haversine_landing','flight_time_landing','route_landing'],axis=1)
     
-    joint_lt_subset = joint_lt_subset.groupby(['route','IATA'], group_keys=False).apply(aux_functions.replace_minor_models)
+    joint_lt_subset['OCU_EMP'] = joint_lt_subset['PAX'] / joint_lt_subset['EMP_SEATS']
     
-    joint_lt_subset['time_taken'] = (joint_lt_subset['combined_hour_landing'] - joint_lt_subset['combined_hour']).dt.total_seconds() / 60
-
-    joint_lt_subset['mean_flight_time'] = (
-    joint_lt_subset.groupby(['IATA', 'from', 'to', 'BRAND', 'MODEL'])[['time_taken']]
-    .transform('median')
-    )
-
-    joint_lt_subset['time_delay'] = (joint_lt_subset['time_taken'] - joint_lt_subset['mean_flight_time']) / 60 
-
-    joint_lt_subset['count_routes'] = joint_lt_subset.groupby('route')['route'].transform('count')
-
-    joint_lt_subset = joint_lt_subset.loc[joint_lt_subset['count_routes'] > 5,:]
+    joint_lt_subset = joint_lt_subset.drop(joint_lt_subset[joint_lt_subset['from'] == joint_lt_subset['to']].index,axis = 0)
+    joint_lt_subset = joint_lt_subset.drop(joint_lt_subset.query(' `OCU_EMP` == 0 ').index,axis=0)
     
     joint_lt_subset.to_csv(combined_csv_path_ss)
     
