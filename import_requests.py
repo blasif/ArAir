@@ -2,19 +2,21 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import os
+import json
 
 def get_csv_links():
+    
+    with open('config.json') as f:
+        config = json.load(f)
 
-    csv_file_path = "csv_links.txt"
+    csv_file_path = config['csv_names'] 
 
     if os.path.exists(csv_file_path):
         print(f"{csv_file_path} already exists. Skipping link extraction.")
         return 0
-
-    url = "https://datos.transporte.gob.ar/dataset/aterrizajes-y-despegues-procesados-por-la-administracion-nacional-de-aviacion-civil-anac"
-
+    
     try:
-        response = requests.get(url)
+        response = requests.get(config['flights_data_url'])
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
     except requests.exceptions.RequestException as e:
         print(f"Request failed: {e}")

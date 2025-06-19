@@ -3,10 +3,14 @@ import re
 import csv
 import requests
 import os
+import json
 
 def retrieve_csv():
+    
+    with open("config.json") as f:
+        config = json.load(f)
 
-    with open("csv_links.txt", "r") as file:
+    with open(config['csv_names'], "r") as file:
         links = [line.strip() for line in file]
 
     for link in links:
@@ -21,6 +25,7 @@ def retrieve_csv():
         response.raise_for_status()
         content = response.text
 
+        # Handling different csv delimiters
         sniffer = csv.Sniffer().sniff(content, delimiters=[',',';'])
         delimiter = sniffer.delimiter
 

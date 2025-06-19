@@ -1,39 +1,37 @@
 # src/main.py
 
+import logging
 import import_requests
 import download_csv
 import preprocessing
-# import scrap_wiki
 import download_csv_airports_info
-import sys
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 def main():
     
-    args = sys.argv[1:]
-
-    print("Retrieveing csv links")
+    logger.info("Retrieving CSV links")
 
     import_requests.get_csv_links()
 
-    print("Downloading csvs")
+    logger.info("Downloading CSVs")
 
     download_csv.retrieve_csv()
 
-    print("Scrap Airports info")
+    logger.info("Scraping airport info")
     
     download_csv_airports_info.get_airports_info()
 
-    # scrap_wiki.get_airlines_info()
+    logger.info("Preprocessing data")
 
-    print("Preprocessing data")
-
-    preprocessing.preprocess_first_step()
+    preprocessing.preprocess_step_a()
     
-    preprocessing.preprocess_first_step_b()
+    preprocessing.preprocess_step_b()
     
-    preprocessing.preprocess_second_step(args)
+    preprocessing.preprocess_step_c()
     
-    preprocessing.preprocess_third_step()
+    preprocessing.preprocess_step_d()
 
 if __name__ == "__main__":
 

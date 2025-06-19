@@ -2,20 +2,25 @@ import pandas as pd
 import os
 import numpy as np
 import aux_functions
+import json
 
-def preprocess_first_step():
+def preprocess_step_a():
+    
+    with open("config.json") as f:
+        config = json.load(f)
 
-    flight_data = 'data/flightdata_step_a.csv'
+    flight_data = config["path_flight_data_step_a"]
+    path_flightdata_raw = config["path_flight_data_raw"]
 
     if os.path.exists(flight_data):
         print(f"{flight_data} already exists. Skipping preprocessing.")
         return 0
 
-    csv_files = [f for f in os.listdir('data/flightdata_raw/') if f.endswith('.csv')]
+    csv_files = [f for f in os.listdir(path_flightdata_raw) if f.endswith('.csv')]
 
     for iters, files in enumerate(csv_files):
     
-        temp_df = pd.read_csv(f"data/flightdata_raw/{files}",low_memory = False,index_col=0, delimiter= ',', quotechar = '"', skipinitialspace=True, header=0)
+        temp_df = pd.read_csv(f"{path_flightdata_raw}{files}",low_memory = False,index_col=0, delimiter= ',', quotechar = '"', skipinitialspace=True, header=0)
     
         if iters > 0:
             temp_df.columns  = df.columns
@@ -65,10 +70,10 @@ def preprocess_first_step():
     # ----------–-------------------
     # Step 2 : Update Airplane names
     # ------------------------------
+    
+    path_aircraft_data = config["path_aircraft_data"]
         
-    # airlines = pd.read_csv("airline_codes.csv")
-
-    aircrafts = pd.read_csv('ACFTREF.txt', delimiter=',', header=0, dtype=str)
+    aircrafts = pd.read_csv(path_aircraft_data, delimiter = ',', header = 0, dtype = str)
 
     aircrafts['MFR'] =  aircrafts['MFR'].astype(str).str.strip()
     aircrafts['MODEL'] =  aircrafts['MODEL'].astype(str).str.strip()
@@ -113,9 +118,9 @@ def preprocess_first_step():
 
         # Brand dominance condition
         MNF_sizes = subset.groupby('BRAND').size()
-        dominant_ratio = (MNF_sizes / subset.shape[0]).max() * 100
+        dominant_ratio = (MNF_sizes / subset.shape[0]).max()
 
-        if dominant_ratio > 90:
+        if dominant_ratio > 0.9:
             brand_to_impute = MNF_sizes.idxmax()
             model_to_impute = (
                 subset[subset['BRAND'] == brand_to_impute]
@@ -177,19 +182,22 @@ def preprocess_first_step():
     df.to_csv(flight_data)
     
 
-def preprocess_first_step_b():
+def preprocess_step_b():
     
-    combined_csv_path_ss = 'data/flightdata_step_b.csv'
-    combined_csv_path_fs = 'data/flightdata_step_a.csv'
+    with open("config.json") as f:
+        config = json.load(f)
+    
+    path_step_b = config['path_flight_step_b']
+    path_step_a = config['path_flight_step_a']
 
-    if os.path.exists(combined_csv_path_ss):
-        print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
+    if os.path.exists(path_step_b):
+        print(f"{path_step_b} already exists. Skipping preprocessing.")
         return 0
     else :
-        df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0).drop('index', axis=1)
+        df = pd.read_csv(f"{path_step_a}",low_memory = False,index_col=0).drop('index', axis=1)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
         
-    Airports_info = pd.read_csv("aeropuertos_detalle.csv", delimiter = ';')
+    Airports_info = pd.read_csv(config['path_airports'], delimiter = ';')
         
     Airports_info['denominacion'] = [aux_functions.remove_accents(denominacion) for denominacion in Airports_info['denominacion']]
 
@@ -230,19 +238,22 @@ def preprocess_first_step_b():
 
     df.reset_index(inplace=True)    
 
-    df.to_csv(combined_csv_path_ss)
+    df.to_csv(path_step_b)
     
     
-def preprocess_second_step(args):
+def preprocess_step_c():
+    
+    with open("config.json") as f:
+        config = json.load(f)
+    
+    path_step_c = config['path_flight_step_c']
+    path_step_b = config['path_flight_step_b']
         
-    combined_csv_path_ss = 'data/flightdata_step_c.csv'
-    combined_csv_path_fs = 'data/flightdata_step_b.csv'
-
-    if os.path.exists(combined_csv_path_ss):
-        print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
+    if os.path.exists(path_step_c):
+        print(f"{path_step_c} already exists. Skipping preprocessing.")
         return 0
     else :
-        df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
+        df = pd.read_csv(f"{path_step_b}",low_memory = False,index_col=0)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
 
     subset_takeoff_reg_df = df.query("`mov` == 'takeoff'").copy()
@@ -252,23 +263,26 @@ def preprocess_second_step(args):
         lambda row: aux_functions.get_id(subset_landing, row), axis=1
         )
         
-    subset_takeoff_reg_df.to_csv(combined_csv_path_ss)
+    subset_takeoff_reg_df.to_csv(path_step_c)
     
-def preprocess_third_step():
+def preprocess_step_d():
     
     # drop _to_landing
     
-    combined_csv_path_ss = 'data/flightdata_step_d.csv'
+    with open("config.json") as f:
+        config = json.load(f)
     
-    combined_csv_path_fs = 'data/flightdata_step_c.csv'
-
-    if os.path.exists(combined_csv_path_ss):
-        print(f"{combined_csv_path_ss} already exists. Skipping preprocessing.")
+    path_step_d = config['path_flight_step_d']
+    path_step_c = config['path_flight_step_c']
+    path_step_b = config['path_flight_step_b']  
+        
+    if os.path.exists(path_step_d):
+        print(f"{path_step_d} already exists. Skipping preprocessing.")
         return 0
     else :
-        df = pd.read_csv(f"{combined_csv_path_fs}",low_memory = False,index_col=0)
+        df = pd.read_csv(f"{path_step_c}",low_memory = False,index_col=0)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'], yearfirst = True)
-        df_old = pd.read_csv('data/flightdata_step_b.csv',low_memory = False,index_col= 0)
+        df_old = pd.read_csv(path_step_b,low_memory = False,index_col= 0)
         df_old['combined_hour'] = pd.to_datetime(df_old['combined_hour'], yearfirst = True)
         subset_landing = df_old.query(" `mov` == 'landing'").copy()
     
@@ -278,14 +292,14 @@ def preprocess_third_step():
     joint_lt = df.set_index('ids').join(how = 'left', other = subset_landing
     .set_index('index'), rsuffix = '_landing')
 
-    joint_lt_subset = joint_lt.drop(['index','mov','airline','airplane','to_landing','from_landing','mov_landing','airline_landing','airplane_landing','BRAND_landing','MODEL_landing','airplane_std_landing','IATA_landing','Airline_polished_landing','AIRLINE_STD_landing','EMP_SEATS_landing','Latitude_to_landing','Longitude_to_landing','City_to_landing','dist_to_city_to_landing','fir_to_landing','province_to_landing','haversine_landing','flight_time_landing','route_landing'],axis=1)
+    joint_lt_subset = joint_lt.drop(['index','mov','airline','airplane','to_landing','from_landing','mov_landing','airline_landing','airplane_landing','BRAND_landing','MODEL_landing','airplane_std_landing','IATA_landing','Airline_polished_landing','AIRLINE_STD_landing','EMP_SEATS_landing','Latitude_to_landing','Longitude_to_landing','City_to_landing','dist_to_city_to_landing','fir_to_landing','province_to_landing','haversine_landing','flight_time_landing','route_landing'], axis = 1)
     
     joint_lt_subset['OCU_EMP'] = joint_lt_subset['PAX'] / joint_lt_subset['EMP_SEATS']
     
     joint_lt_subset = joint_lt_subset.drop(joint_lt_subset[joint_lt_subset['from'] == joint_lt_subset['to']].index,axis = 0)
     joint_lt_subset = joint_lt_subset.drop(joint_lt_subset.query(' `OCU_EMP` == 0 ').index,axis=0)
     
-    joint_lt_subset.to_csv(combined_csv_path_ss)
+    joint_lt_subset.to_csv(path_step_d)
     
     return 0
 
