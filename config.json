@@ -1,0 +1,12 @@
+{
+  "airport_data_url": "https://datos.transporte.gob.ar/dataset/62b3fe5f-ffe6-4d8f-9d59-bfabe75d1ee8/resource/eb54e49e-9a5a-4614-91f4-526c650d0105/download/aeropuertos_detalle.csv",
+  "flights_data_url": "https://datos.transporte.gob.ar/dataset/aterrizajes-y-despegues-procesados-por-la-administracion-nacional-de-aviacion-civil-anac",
+  "csv_names": "data/csv_links.txt",
+  "path_airports": "data/aeropuertos_detalle.csv",
+  "path_flight_data_step_a": "data/flightdata_step_a.csv",
+  "path_flight_data_step_b": "data/flightdata_step_b.csv",
+  "path_flight_data_step_c": "data/flightdata_step_c.csv",
+  "path_flight_data_step_d": "data/flightdata_step_d.csv",
+  "path_flight_data_raw": "data/flightdata_raw/",
+  "path_aircraft_data": "ACFTREF.txt"
+}
