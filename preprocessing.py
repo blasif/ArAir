@@ -9,7 +9,7 @@ def preprocess_step_a():
     with open("config.json") as f:
         config = json.load(f)
 
-    flight_data = config["path_flight_data_step_a"]
+    flight_data = config["path_flight_step_a"]
     path_flightdata_raw = config["path_flight_data_raw"]
 
     if os.path.exists(flight_data):
@@ -164,14 +164,16 @@ def preprocess_step_a():
                             'JETSMART AIRLINES S.A.' : 'JA',
                             'LAN ARGENTINA S.A. (LATAM AIRLINES)' : 'LA'})
 
-    std_names = [airline + " " + "(" + iata + ")" for airline, iata in zip(map_airlines_names.values(), map_iata_names.values())]
-
-    result = dict(zip(list(unique_airline_names),std_names))
-
     df['IATA'] = df['airline'].map(map_iata_names)
     df['Airline_polished'] = df['airline'].map(map_airlines_names)
+    
+    df['AIRLINE_STD'] = df['Airline_polished'] + " (" + df['IATA'] + ")"
+    
+    #std_names = [airline + " " + "(" + iata + ")" for airline, iata in zip(map_airlines_names.values(), map_iata_names.values())]
 
-    df['AIRLINE_STD'] = df['airline'].map(result)
+    #result = dict(zip(list(unique_airline_names),std_names))
+
+    #df['AIRLINE_STD'] = df['airline'].map(result)
 
     df['EMP_SEATS'] = df.groupby(['IATA','BRAND','MODEL'])['PAX'].transform(lambda x : int(x.quantile(0.99)))
 
