@@ -199,7 +199,7 @@ def preprocess_step_b():
         df = pd.read_csv(f"{path_step_a}",low_memory = False,index_col=0).drop('index', axis=1)
         df['combined_hour'] = pd.to_datetime(df['combined_hour'])
         
-    Airports_info = pd.read_csv(config['path_airports'], delimiter = ';')
+    Airports_info = pd.read_csv(config['path_airports'], delimiter = ',')
         
     Airports_info['denominacion'] = [aux_functions.remove_accents(denominacion) for denominacion in Airports_info['denominacion']]
 

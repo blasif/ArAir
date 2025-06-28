@@ -5,11 +5,14 @@ import import_requests
 import download_csv
 import preprocessing
 import download_csv_airports_info
+import os
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 def main():
+    
+    os.makedirs("data", exist_ok = True)
     
     logger.info("Retrieving CSV links")
 
